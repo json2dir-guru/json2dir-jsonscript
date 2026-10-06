@@ -1,0 +1,10 @@
+{
+  "name": "json2dir-jsonscript",
+  "version": "0.1.0",
+  "private": true,
+  "description": "json2dir written as a JSONScript program",
+  "license": "MIT",
+  "dependencies": {
+    "jsonscript-js": "0.6.0"
+  }
+}

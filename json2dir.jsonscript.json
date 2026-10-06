@@ -1,0 +1,190 @@
+[
+  {
+    "$name": "vwalk",
+    "$args": ["fns", "list", "where"],
+    "$func": {
+      "$if": { "$==": [{ "$data": "/list" }, null] },
+      "$then": true,
+      "$else": [
+        {
+          "$call": { "$data": "/fns/vnode" },
+          "$args": [
+            { "$data": "/fns" },
+            { "$data": "/list/name" },
+            { "$data": "/list/value" },
+            { "$$str.concat": [{ "$data": "/where" }, "/", { "$data": "/list/name" }] }
+          ]
+        },
+        {
+          "$call": { "$data": "/fns/vwalk" },
+          "$args": [{ "$data": "/fns" }, { "$data": "/list/next" }, { "$data": "/where" }]
+        }
+      ]
+    }
+  },
+  {
+    "$name": "vnode",
+    "$args": ["fns", "name", "val", "path"],
+    "$func": [
+      {
+        "$if": {
+          "$||": [
+            { "$==": [{ "$data": "/name" }, ""] },
+            { "$==": [{ "$data": "/name" }, "."] },
+            { "$==": [{ "$data": "/name" }, ".."] },
+            { "$>=": [{ "$$str.pos": [{ "$data": "/name" }, "/"] }, 0] },
+            { "$>=": [{ "$$str.pos": [{ "$data": "/name" }, "\u0000"] }, 0] },
+            { "$!": { "$$json.wellFormed": { "$data": "/name" } } }
+          ]
+        },
+        "$then": { "$$fail": { "$$str.concat": [{ "$data": "/path" }, ": invalid name"] } }
+      },
+      {
+        "$if": { "$==": [{ "$$json.type": { "$data": "/val" } }, "string"] },
+        "$then": {
+          "$if": { "$!": { "$$json.wellFormed": { "$data": "/val" } } },
+          "$then": { "$$fail": { "$$str.concat": [{ "$data": "/path" }, ": string contains an unpaired surrogate"] } }
+        },
+        "$else": {
+          "$if": { "$==": [{ "$$json.type": { "$data": "/val" } }, "array"] },
+          "$then": {
+            "$if": {
+              "$||": [
+                { "$!=": [{ "$$json.length": { "$data": "/val" } }, 2] },
+                { "$!=": [{ "$$json.type": { "$data": "/val/0" } }, "string"] },
+                { "$!=": [{ "$$json.type": { "$data": "/val/1" } }, "string"] }
+              ]
+            },
+            "$then": { "$$fail": { "$$str.concat": [{ "$data": "/path" }, ": an array must be [\"link\", target] or [\"script\", content]"] } },
+            "$else": {
+              "$if": { "$==": [{ "$data": "/val/0" }, "link"] },
+              "$then": {
+                "$if": {
+                  "$||": [
+                    { "$>=": [{ "$$str.pos": [{ "$data": "/val/1" }, "\u0000"] }, 0] },
+                    { "$!": { "$$json.wellFormed": { "$data": "/val/1" } } }
+                  ]
+                },
+                "$then": { "$$fail": { "$$str.concat": [{ "$data": "/path" }, ": invalid link target"] } }
+              },
+              "$else": {
+                "$if": { "$==": [{ "$data": "/val/0" }, "script"] },
+                "$then": {
+                  "$if": { "$!": { "$$json.wellFormed": { "$data": "/val/1" } } },
+                  "$then": { "$$fail": { "$$str.concat": [{ "$data": "/path" }, ": string contains an unpaired surrogate"] } }
+                },
+                "$else": { "$$fail": { "$$str.concat": [{ "$data": "/path" }, ": unknown array kind"] } }
+              }
+            }
+          },
+          "$else": {
+            "$if": { "$==": [{ "$$json.type": { "$data": "/val" } }, "object"] },
+            "$then": {
+              "$call": { "$data": "/fns/vwalk" },
+              "$args": [{ "$data": "/fns" }, { "$$json.list": { "$data": "/val" } }, { "$data": "/path" }]
+            },
+            "$else": {
+              "$$fail": {
+                "$$str.concat": [{ "$data": "/path" }, ": ", { "$$json.type": { "$data": "/val" } }, " values are not allowed"]
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "$name": "awalk",
+    "$args": ["fns", "list", "dir"],
+    "$func": {
+      "$if": { "$==": [{ "$data": "/list" }, null] },
+      "$then": true,
+      "$else": [
+        {
+          "$call": { "$data": "/fns/anode" },
+          "$args": [
+            { "$data": "/fns" },
+            { "$data": "/list/value" },
+            { "$$str.concat": [{ "$data": "/dir" }, "/", { "$data": "/list/name" }] }
+          ]
+        },
+        {
+          "$call": { "$data": "/fns/awalk" },
+          "$args": [{ "$data": "/fns" }, { "$data": "/list/next" }, { "$data": "/dir" }]
+        }
+      ]
+    }
+  },
+  {
+    "$name": "anode",
+    "$args": ["fns", "val", "path"],
+    "$func": {
+      "$call": { "$data": "/fns/aact" },
+      "$args": [{ "$data": "/fns" }, { "$data": "/val" }, { "$data": "/path" }, { "$$fs.kind": { "$data": "/path" } }]
+    }
+  },
+  {
+    "$name": "aact",
+    "$args": ["fns", "val", "path", "kind"],
+    "$func": {
+      "$if": { "$==": [{ "$$json.type": { "$data": "/val" } }, "object"] },
+      "$then": [
+        {
+          "$if": { "$!=": [{ "$data": "/kind" }, "dir"] },
+          "$then": [
+            {
+              "$if": { "$==": [{ "$data": "/kind" }, "other"] },
+              "$then": { "$$fs.unlink": { "$data": "/path" } }
+            },
+            { "$$fs.mkdir": { "$data": "/path" } }
+          ]
+        },
+        {
+          "$call": { "$data": "/fns/awalk" },
+          "$args": [{ "$data": "/fns" }, { "$$json.list": { "$data": "/val" } }, { "$data": "/path" }]
+        }
+      ],
+      "$else": [
+        {
+          "$if": { "$==": [{ "$data": "/kind" }, "dir"] },
+          "$then": { "$$fail": { "$$str.concat": [{ "$data": "/path" }, ": a directory is in the way"] } }
+        },
+        {
+          "$if": { "$==": [{ "$data": "/kind" }, "other"] },
+          "$then": { "$$fs.unlink": { "$data": "/path" } }
+        },
+        {
+          "$if": { "$==": [{ "$$json.type": { "$data": "/val" } }, "string"] },
+          "$then": { "$$fs.write": { "path": { "$data": "/path" }, "content": { "$data": "/val" } } },
+          "$else": {
+            "$if": { "$==": [{ "$data": "/val/0" }, "link"] },
+            "$then": { "$$fs.symlink": { "target": { "$data": "/val/1" }, "path": { "$data": "/path" } } },
+            "$else": [
+              { "$$fs.write": { "path": { "$data": "/path" }, "content": { "$data": "/val/1" } } },
+              { "$$fs.chmodx": { "$data": "/path" } }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "vwalk": { "$func": "vwalk" },
+    "vnode": { "$func": "vnode" },
+    "awalk": { "$func": "awalk" },
+    "anode": { "$func": "anode" },
+    "aact": { "$func": "aact" }
+  },
+  {
+    "$if": { "$!=": [{ "$$json.type": { "$data": "" } }, "object"] },
+    "$then": { "$$fail": "the root of the document must be an object" }
+  },
+  {
+    "$call": { "$ref": "/5/vwalk" },
+    "$args": [{ "$ref": "/5" }, { "$$json.list": { "$data": "" } }, "."]
+  },
+  {
+    "$call": { "$ref": "/5/awalk" },
+    "$args": [{ "$ref": "/5" }, { "$$json.list": { "$data": "" } }, "."]
+  }
+]
